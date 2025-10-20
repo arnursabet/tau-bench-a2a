@@ -1,176 +1,260 @@
-# τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains
+# τ-Bench Project Management (PM) Domain
 
-**❗News**: We have released [τ²-bench](https://github.com/sierra-research/tau2-bench) as an extension of $\tau$-bench. $\tau^2$-bench includes code fixes and an additional `telecom` domain focusing on troubleshooting scenarios. Please use the $\tau^2$-bench as the latest version of this benchmark.
+This extension adds a **project management domain** to τ-Bench, enabling evaluation of agents on realistic ticket-management tasks.
 
-**Paper**:
-* [τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains](https://arxiv.org/abs/2406.12045)
-* [τ²-Bench: Evaluating Conversational Agents in a Dual-Control Environment](https://arxiv.org/abs/2506.07982)
+## Overview
 
-We propose $\tau$-bench, a benchmark emulating dynamic conversations between a user (simulated by language models) and a language agent provided with domain-specific API tools and policy guidelines.
+The PM domain evaluates agents on their ability to:
+- Authenticate users and operate within project scope
+- Create, update, and manage tickets (tasks)
+- Assign tickets to team members
+- Enforce policy constraints (status transitions, membership checks, confirmation rules)
+- Handle multi-step workflows consistently
 
-## Leaderboard
+## Domain Components
 
-### Airline
+### Data Model
 
-| Strategy       | Pass^1 | Pass^2 | Pass^3 | Pass^4 |
-| -------------- | ------ | ------ | ------ | ------ |
-| [TC (claude-3-5-sonnet-20241022)](https://www.anthropic.com/news/3-5-models-and-computer-use)      | **0.460**     | **0.326**     | **0.263**     | **0.225**     |
-| [TC (gpt-4o)](https://platform.openai.com/docs/guides/function-calling)     | 0.420     | 0.273     | 0.220     | 0.200     |
-| [TC (claude-3-5-sonnet-20240620)](https://docs.anthropic.com/en/docs/build-with-claude/tool-use)      | 0.360     | 0.224     | 0.169     | 0.139     |
-| [TC (mistral-large-2407)](https://docs.mistral.ai/capabilities/function_calling/)     | ??     | ??     | ??     | ??     |
-| [TC (gpt-4o-mini)](https://platform.openai.com/docs/guides/function-calling)     | 0.225     | 0.140     | 0.110     | 0.100     |
-| [Act](https://arxiv.org/abs/2210.03629) (gpt-4o)     | 0.365 | 0.217 | 0.160 | 0.140     |
-| [ReAct](https://arxiv.org/abs/2210.03629) (gpt-4o)     | 0.325 | 0.233 | 0.185 | 0.160     |
+**Users** (`data/users.json`):
+- 5 sample users with IDs, names, and emails
+- Used for authentication and project membership
 
-### Retail
+**Projects** (`data/projects.json`):
+- 3 projects: Web App, Mobile, Backend
+- Each project has a defined member list
 
-| Strategy       | Pass^1 | Pass^2 | Pass^3 | Pass^4 |
-| -------------- | ------ | ------ | ------ | ------ |
-| [TC (claude-3-5-sonnet-20241022)](https://www.anthropic.com/news/3-5-models-and-computer-use)      | **0.692**     | **0.576**     | **0.509**     | **0.462**     |
-| [TC (gpt-4o)](https://platform.openai.com/docs/guides/function-calling)     | 0.604     | 0.491     | 0.430     | 0.383     |
-| [TC (claude-3-5-sonnet-20240620)](https://docs.anthropic.com/en/docs/build-with-claude/tool-use)      | 0.626     | 0.506     | 0.435     | 0.387     |
-| [TC (mistral-large-2407)](https://docs.mistral.ai/capabilities/function_calling/)     | ??     | ??     | ??     | ??     |
-| [TC (gpt-4o-mini)](https://platform.openai.com/docs/guides/function-calling)     | ??     | ??     | ??     | ??     |
-| [Act](https://arxiv.org/abs/2210.03629) (gpt-4o)     | ??     | ??     | ??     | ??     |
-| [ReAct](https://arxiv.org/abs/2210.03629) (gpt-4o)     | ??     | ??     | ??     | ??     |
+**Tickets** (`data/tickets.json`):
+- Initial set of 5 tickets across projects
+- Fields: id, project_id, title, description, status, priority, assignee, comments, history
 
-*TC = `tool-calling` strategy (the function-calling strategy reported in the paper)
+### Tools (APIs)
 
-## Setup
+Located in `tau_bench/envs/pm/tools/`:
 
-1. Clone this repository:
+| Tool | Purpose |
+|------|---------|
+| `list_tickets` | Query tickets in a project with optional status filter |
+| `create_ticket` | Create a new ticket with title, description, priority |
+| `update_status` | Change ticket status following allowed transitions |
+| `assign_user` | Assign ticket to a project member |
+| `update_priority` | Change ticket priority (low/medium/high) |
+| `add_comment` | Add a comment to a ticket |
+| `get_user_details` | Retrieve user information |
+| `transfer_to_human_agents` | Terminate conversation (for out-of-scope requests) |
+| `think` | Internal reasoning (non-state-changing) |
 
-```bash
-git clone https://github.com/sierra-research/tau-bench && cd ./tau-bench
-```
+### Policy
 
-2. Install from source (which also installs required packages):
+Defined in `tau_bench/envs/pm/wiki.md` and `tau_bench/envs/pm/rules.py`:
 
-```bash
-pip install -e .
-```
+- **Authentication**: User must be identified at the beginning
+- **Single Project Scope**: Agent works on one project per conversation
+- **Status Transitions**: `todo → in_progress → in_review → done` (with backtracking allowed)
+- **Membership Constraint**: Only project members can be assigned tickets
+- **Confirmation**: Agent must ask for explicit confirmation before state-changing operations
+- **One Call per Turn**: Either a tool call OR user response, never both
 
-3. Set up your OpenAI / Anthropic / Google / Mistral / AnyScale API keys as environment variables.
+### Tasks
 
-```bash
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-GOOGLE_API_KEY=...
-MISTRAL_API_KEY=...
-```
+5 test tasks in `tau_bench/envs/pm/tasks_test.py` covering:
+1. Assigning high-priority tickets and moving to in_progress
+2. Creating multiple new tickets with different priorities
+3. Moving a ticket through status workflow
+4. Assigning and changing priority
+5. Adding comments and completing a ticket
 
-## Run
+## Integration with τ-Bench
 
-Run a tool-calling agent on the τ-retail environment:
-
-```bash
-python run.py --agent-strategy tool-calling --env retail --model gpt-4o --model-provider openai --user-model gpt-4o --user-model-provider openai --user-strategy llm --max-concurrency 10
-```
-
-Set max concurrency according to your API limit(s).
-
-To run specific tasks, use the `--task-ids` flag. For example:
+### Using the CLI
 
 ```bash
-python run.py --agent-strategy tool-calling --env retail --model gpt-4o --model-provider openai --user-model gpt-4o --user-model-provider openai --user-strategy llm --max-concurrency 10 --task-ids 2 4 6
+# Load the PM domain
+python run.py \
+  --agent-strategy tool-calling \
+  --env pm \
+  --model gpt-4-mini \
+  --model-provider openai \
+  --num-trials 3 \
+  --user-model gpt-4-mini \
+  --user-model-provider openai
 ```
 
-This command will run only the tasks with IDs 2, 4, and 6.
+### Programmatic Usage
 
-## User simulators
+```python
+from tau_bench.envs import get_env
 
-By default, we use `gpt-4o` as the user simulator with strategy `llm`. You can use other models by setting the `--user-model` flag, or other strategies by setting the `--user-strategy` flag. For example, run a tool-calling agent with a claude user simulator:
+env = get_env(
+    env_name="pm",
+    user_strategy="llm",  # or "human" for interactive testing
+    user_model="gpt-4o",
+    task_split="test",
+)
+
+# Access domain components
+print(f"Tasks: {len(env.tasks)}")
+print(f"Tools: {len(env.tools_info)}")
+print(f"Wiki: {len(env.wiki)}")
+```
+
+## FastAPI Green Agent Service
+
+A FastAPI service exposes the PM domain for evaluation:
+
+### Installation
 
 ```bash
-python run.py --agent-strategy tool-calling --env retail --model gpt-4o --model-provider openai --max-concurrency 10 --user-model claude-3-5-sonnet-20240620 --user-model-provider anthropic --user-strategy llm
+pip install fastapi uvicorn
 ```
 
-Other strategies:
-
-To run `react` user simulator:
+### Running the Service
 
 ```bash
-python run.py --agent-strategy tool-calling --env retail --model gpt-4o --model-provider openai --max-concurrency 10 --user-model gpt-4o --user-model-provider openai --user-strategy react
+make run
+# or
+uvicorn service.green_agent.main:app --reload
 ```
 
-Example of a `react` user response:
+### Endpoints
 
-```md
-Thought:
-I should provide my name and zip code as I wasn't given an email address to use.
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Health check |
+| `/agent-card` | GET | Agent capabilities descriptor |
+| `/reset` | POST | Reset domain state |
+| `/assess` | POST | Run assessment on tasks |
+| `/logs/{run_id}` | GET | Fetch run logs and episodes |
 
-User Response:
-Sure, my name is Yusuf Rossi, and my zip code is 19122.
-```
-
-To run `verify` user simulator:
+### Example: Running an Assessment
 
 ```bash
-python run.py --agent-strategy tool-calling --env retail --model gpt-4o --model-provider openai --max-concurrency 10 --user-model gpt-4o --user-model-provider openai --user-strategy verify
+curl -X POST http://localhost:8000/assess \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trials": 3,
+    "agent_strategy": "tool-calling",
+    "task_ids": [0, 1, 2]
+  }'
 ```
 
-This strategy uses a subsequent LLM verification step to check if the user simulator's response is satisfactory. If not, the user simulator will be prompted to generate a new response.
-
-To run `reflection` user simulator:
-
-```bash
-python run.py --agent-strategy tool-calling --env retail --model gpt-4o --model-provider openai --max-concurrency 10 --user-model gpt-4o --user-model-provider openai --user-strategy reflection
-```
-
-This strategy uses a subsequent LLM verification step to check if the user simulator's response is satisfactory. If not, the user simulator will be prompted to reflect on its response and generate a new response.
-
-## Auto error identification
-
-Often times, it is difficult and time consuming to manually identify specific error locations in trajectories as they can be long and the constraints can be complex. We have provided an auto error identification tool that can do the following:
-
-1. Fault assignment: determine the entity that is responsible for the fault (user, agent, environment)
-2. Fault type classification: classify the type of fault (goal_partially_completed, used_wrong_tool, used_wrong_tool_argument, took_unintended_action)
-
-Both of the labels are accompanied with a description.
-
-To run the auto error identification, run:
-
-```bash
-python auto_error_identification.py --env <airline/retail> --platform openai --results-path <the path to your results file here> --max-concurrency 16 --output-path test-auto-error-identification --max-num-failed-results 10
-```
-
-Please note that this feature utilizes an LLM, which may lead to inaccurate error identifications.
-
-*Notice: If an error is raised due to the structure of your results file, you may have to rerun the benchmark to produce a new results file. We have recently [rewritten](https://github.com/sierra-research/tau-bench/commit/043b544371757ebb3762b3d02a6675dfe0c41798) the benchmark to be more type-safe and extensible.
-
-## Historical trajectories
-
-τ-bench might be expensive to run. We have provided a set of historical trajectories for the airline and retail environments in `./historical_trajectories`.
-
-If you would like to contribute your historical trajectories to this benchmark, please submit a PR!
-
-## License
-
-See `./LICENSE`.
-
-## Contact
-
-Please submit issues or pull requests if you find problems with the benchmark.
-
-## Citation
-
-```bibtex
-@misc{yao2024tau,
-      title={$\tau$-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains}, 
-      author={Shunyu Yao and Noah Shinn and Pedram Razavi and Karthik Narasimhan},
-      year={2024},
-      eprint={2406.12045},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2406.12045}, 
-}
-@misc{barres2025tau2,
-      title={$\tau^2$-Bench: Evaluating Conversational Agents in a Dual-Control Environment}, 
-      author={Victor Barres and Honghua Dong and Soham Ray and Xujie Si and Karthik Narasimhan},
-      year={2025},
-      eprint={2506.07982},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2506.07982}, 
+Response:
+```json
+{
+  "run_id": "762ecd18-b2b6-497f-9129-3e4ff8b71aed",
+  "pass_1": 0.4,
+  "pass_k": {"1": 0.4, "2": 0.2, "3": 0.0},
+  "per_task": [
+    {
+      "task_id": 0,
+      "pass_1": 0.333,
+      "pass_k": {"1": 0.333, "2": 0.0, "3": 0.0},
+      "num_trials": 3
+    },
+    ...
+  ]
 }
 ```
+
+## Metrics
+
+The evaluation framework tracks:
+
+- **pass^1**: Fraction of tasks completed successfully in one trial
+- **pass^k**: Probability of completing all k trials successfully (measures consistency/reliability)
+- **Per-task metrics**: Task-level pass rates and pass^k breakdown
+- **Episode logs**: Action sequences, errors, and policy violations
+
+## Demo & Testing
+
+### Run Demo
+
+```bash
+make demo
+# or
+python3 scripts/demo.py
+```
+
+Generates `demo_results.json` with sample assessment results.
+
+### Expected Output
+
+```
+============================================================
+τ-Bench PM Domain Demo
+============================================================
+
+Running Assessment 1: Basic eval (1 trial)
+------------------------------------------------------------
+Run ID: ...
+Pass^1: 40.00%
+Pass^k: {1: 0.4}
+
+Running Assessment 2: Multi-trial eval (3 trials)
+------------------------------------------------------------
+...
+```
+
+## Design Rationale
+
+### Simplicity & DRY
+
+- Reuses τ-Bench's core evaluation harness (environment, agent framework, metrics)
+- Tools follow τ-Bench patterns (Tool base class, get_info descriptors, invoke methods)
+- No SQL; state is pure JSON for tractability
+
+### Policy Enforcement
+
+- Status transitions hard-coded in `UpdateStatus` tool
+- Membership checks in `AssignUser` tool
+- Policy text echoed in system prompt for LLM agents
+
+### Ground Truth Validation
+
+- Tasks include deterministic action sequences
+- Final state compared via JSON hash (like retail/airline domains)
+- Output verification for user-facing information (comments, confirmations)
+
+## Future Improvements
+
+1. **Real Agent Integration**: Replace mock rewards with actual agent/LLM invocation
+2. **More Tasks**: Expand test/dev/train splits with complex scenarios
+3. **Advanced Policies**: Dynamic rules, multi-project workflows, role-based access
+4. **Metrics Extensions**: Cost tracking, latency, error categories
+5. **Baseline Agents**: Implement rule-based and few-shot baselines
+
+## File Structure
+
+```
+tau_bench/
+├── envs/
+│   ├── pm/
+│   │   ├── __init__.py
+│   │   ├── env.py           # MockPMDomainEnv
+│   │   ├── data/
+│   │   │   ├── __init__.py
+│   │   │   ├── users.json
+│   │   │   ├── projects.json
+│   │   │   └── tickets.json
+│   │   ├── tools/           # Tool implementations
+│   │   ├── wiki.md          # Policy documentation
+│   │   ├── wiki.py          # Wiki loader
+│   │   ├── rules.py         # Rule list
+│   │   └── tasks_test.py    # Test tasks
+│
+service/
+├── green_agent/
+│   ├── main.py              # FastAPI app
+│   ├── schemas.py           # Pydantic models
+│   ├── runner.py            # Assessment runner
+│   ├── storage.py           # SQLite storage
+│   └── config.py            # Configuration
+│
+scripts/
+├── demo.py                  # Demo assessment script
+└── Makefile                 # Build/run targets
+```
+
+## References
+
+- τ-Bench paper: https://arxiv.org/abs/2406.12045
+- τ-Bench repo: https://github.com/sierra-research/tau-bench

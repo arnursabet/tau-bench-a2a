@@ -1,0 +1,17 @@
+{
+  "proj_web_app_2024": {
+    "id": "proj_web_app_2024",
+    "name": "Web App Redesign",
+    "members": ["alice_smith_1001", "bob_johnson_1002", "carol_williams_1003"]
+  },
+  "proj_mobile_2024": {
+    "id": "proj_mobile_2024",
+    "name": "Mobile Companion App",
+    "members": ["bob_johnson_1002", "david_brown_1004", "emma_davis_1005"]
+  },
+  "proj_backend_2024": {
+    "id": "proj_backend_2024",
+    "name": "Backend API Upgrade",
+    "members": ["alice_smith_1001", "david_brown_1004"]
+  }
+}

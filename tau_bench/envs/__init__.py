@@ -33,5 +33,15 @@ def get_env(
             user_provider=user_provider,
             task_index=task_index,
         )
+    elif env_name == "pm":
+        from tau_bench.envs.pm import MockPMDomainEnv
+
+        return MockPMDomainEnv(
+            user_strategy=user_strategy,
+            user_model=user_model,
+            task_split=task_split,
+            user_provider=user_provider,
+            task_index=task_index,
+        )
     else:
         raise ValueError(f"Unknown environment: {env_name}")

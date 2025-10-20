@@ -1,0 +1,57 @@
+{
+  "tick_001": {
+    "id": "tick_001",
+    "project_id": "proj_web_app_2024",
+    "title": "Fix login button styling",
+    "description": "The login button is misaligned on mobile.",
+    "status": "todo",
+    "priority": "high",
+    "assignee": null,
+    "comments": [],
+    "history": []
+  },
+  "tick_002": {
+    "id": "tick_002",
+    "project_id": "proj_web_app_2024",
+    "title": "Implement dark mode toggle",
+    "description": "Add a dark mode option to settings.",
+    "status": "todo",
+    "priority": "medium",
+    "assignee": null,
+    "comments": [],
+    "history": []
+  },
+  "tick_003": {
+    "id": "tick_003",
+    "project_id": "proj_web_app_2024",
+    "title": "Update homepage banner",
+    "description": "Replace banner with new brand assets.",
+    "status": "in_progress",
+    "priority": "high",
+    "assignee": "carol_williams_1003",
+    "comments": [],
+    "history": [{"action": "assigned", "user": "alice_smith_1001", "timestamp": "2024-10-15T10:00:00"}]
+  },
+  "tick_004": {
+    "id": "tick_004",
+    "project_id": "proj_mobile_2024",
+    "title": "Add push notifications",
+    "description": "Implement push notification system.",
+    "status": "todo",
+    "priority": "medium",
+    "assignee": null,
+    "comments": [],
+    "history": []
+  },
+  "tick_005": {
+    "id": "tick_005",
+    "project_id": "proj_backend_2024",
+    "title": "Optimize database queries",
+    "description": "Improve query performance for user endpoints.",
+    "status": "todo",
+    "priority": "high",
+    "assignee": null,
+    "comments": [],
+    "history": []
+  }
+}

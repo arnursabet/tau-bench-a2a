@@ -1,0 +1,27 @@
+{
+  "alice_smith_1001": {
+    "id": "alice_smith_1001",
+    "name": "Alice Smith",
+    "email": "alice.smith1001@example.com"
+  },
+  "bob_johnson_1002": {
+    "id": "bob_johnson_1002",
+    "name": "Bob Johnson",
+    "email": "bob.johnson1002@example.com"
+  },
+  "carol_williams_1003": {
+    "id": "carol_williams_1003",
+    "name": "Carol Williams",
+    "email": "carol.williams1003@example.com"
+  },
+  "david_brown_1004": {
+    "id": "david_brown_1004",
+    "name": "David Brown",
+    "email": "david.brown1004@example.com"
+  },
+  "emma_davis_1005": {
+    "id": "emma_davis_1005",
+    "name": "Emma Davis",
+    "email": "emma.davis1005@example.com"
+  }
+}
