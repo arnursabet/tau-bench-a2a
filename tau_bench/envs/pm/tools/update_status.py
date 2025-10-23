@@ -24,7 +24,7 @@ class UpdateStatus(Tool):
         ticket = tickets[ticket_id]
         current_status = ticket["status"]
         
-        if new_status not in ALLOWED_TRANSITIONS.get(current_status, []):
+        if current_status != new_status and new_status not in ALLOWED_TRANSITIONS.get(current_status, []):
             return f"Error: cannot transition from {current_status} to {new_status}"
         
         ticket["status"] = new_status

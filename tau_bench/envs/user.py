@@ -311,23 +311,18 @@ class ReflectionUserSimulationEnv(LLMUserSimulationEnv):
 
 
 class MockUserSimulationEnv(BaseUserSimulationEnv):
-    """Mock user that just echoes the instruction for testing rule-based agents."""
-    
     def __init__(self):
         self.messages = []
         self.total_cost = 0.0
     
     def reset(self, instruction: str) -> str:
-        """Reset with the instruction."""
         self.messages = [{"role": "user", "content": instruction}]
         return instruction
     
     def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
-        """Just return a simple acknowledgment."""
         return "I understand. Please proceed with the task."
     
     def step(self, action: Action) -> str:
-        """Handle agent actions."""
         return "I understand. Please proceed with the task."
     
     def get_total_cost(self) -> float:
