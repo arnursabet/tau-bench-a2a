@@ -90,6 +90,11 @@ class RuleBasedAgent(Agent):
                 "role": "assistant", 
                 "content": final_action.kwargs.get("content", "")
             })
+        
+        # Calculate final reward
+        reward_result = env.calculate_reward()
+        reward = reward_result.reward
+        info = {**info, **reward_result.info.model_dump()}
                 
         return SolveResult(
             reward=reward,
