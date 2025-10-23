@@ -5,6 +5,7 @@ import enum
 from litellm import completion
 
 from typing import Optional, List, Dict, Any, Union
+from tau_bench.types import Action
 
 
 class BaseUserSimulationEnv(abc.ABC):
@@ -309,12 +310,32 @@ class ReflectionUserSimulationEnv(LLMUserSimulationEnv):
         return self.total_cost
 
 
+class MockUserSimulationEnv(BaseUserSimulationEnv):
+    def __init__(self):
+        self.messages = []
+        self.total_cost = 0.0
+    
+    def reset(self, instruction: str) -> str:
+        self.messages = [{"role": "user", "content": instruction}]
+        return instruction
+    
+    def generate_next_message(self, messages: List[Dict[str, Any]]) -> str:
+        return "I understand. Please proceed with the task."
+    
+    def step(self, action: Action) -> str:
+        return "I understand. Please proceed with the task."
+    
+    def get_total_cost(self) -> float:
+        return 0.0
+
+
 class UserStrategy(enum.Enum):
     HUMAN = "human"
     LLM = "llm"
     REACT = "react"
     VERIFY = "verify"
     REFLECTION = "reflection"
+    MOCK = "mock"
 
 
 def load_user(
@@ -350,4 +371,6 @@ def load_user(
         if provider is None:
             raise ValueError("Reflection user strategy requires a model provider")
         return ReflectionUserSimulationEnv(model=model, provider=provider)
+    elif user_strategy == UserStrategy.MOCK:
+        return MockUserSimulationEnv()
     raise ValueError(f"Unknown user strategy {user_strategy}")
