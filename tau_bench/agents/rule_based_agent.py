@@ -82,7 +82,6 @@ class RuleBasedAgent(Agent):
             if result.done:
                 break
         
-        # Always provide a helpful response to the user
         final_action = self._create_final_response_action(user_request)
         if final_action.name == RESPOND_ACTION_NAME:
             env.actions.append(final_action)
@@ -91,7 +90,6 @@ class RuleBasedAgent(Agent):
                 "content": final_action.kwargs.get("content", "")
             })
         
-        # Calculate final reward
         reward_result = env.calculate_reward()
         reward = reward_result.reward
         info = {**info, **reward_result.info.model_dump()}
@@ -102,6 +100,33 @@ class RuleBasedAgent(Agent):
             messages=conversation,
             total_cost=total_cost,
         )
+
+    def _extract_ticket_id(self, instruction: str, data: Dict[str, Any]) -> Optional[str]:
+        ticket_match = re.search(r'(tick_\d+)', instruction)
+        if ticket_match:
+            return ticket_match.group(1)
+        
+        instruction_lower = instruction.lower()
+        
+        tickets_data = data["tickets"]
+        for ticket_id, ticket in tickets_data.items():
+            title_words = ticket["title"].lower().split()
+            instruction_words = instruction_lower.split()
+            
+            if any(word in instruction_words for word in title_words if len(word) > 3):
+                return ticket_id
+        
+        return None
+
+    def _get_project_id_from_user(self, user_id: str) -> str:
+        user_mapping = {
+            "alice_smith_1001": "proj_web_app_2024",
+            "bob_johnson_1002": "proj_web_app_2024", 
+            "carol_williams_1003": "proj_web_app_2024",
+            "david_brown_1004": "proj_backend_2024",
+            "eve_davis_1005": "proj_mobile_2024"
+        }
+        return user_mapping.get(user_id, "proj_web_app_2024")
 
     def _understand_user_context(self, user_request: str) -> tuple[str, str]:
         user_match = re.search(r'(\w+_\w+_\d+)', user_request)
@@ -282,52 +307,106 @@ class RuleBasedAgent(Agent):
             })
 
     def _handle_status_update(self, data: Dict[str, Any], instruction: str) -> Action:
-        if "tick_003" in instruction and "in_review" in instruction.lower():
-            return Action(name="update_status", kwargs={
-                "ticket_id": "tick_003",
-                "new_status": "in_review"
+        ticket_id = self._extract_ticket_id(instruction, data)
+        if not ticket_id:
+            return Action(name=RESPOND_ACTION_NAME, kwargs={
+                "content": "Could not identify which ticket to update."
             })
-        elif "tick_003" in instruction and "done" in instruction.lower():
-            return Action(name="update_status", kwargs={
-                "ticket_id": "tick_003",
-                "new_status": "done"
-            })
+        
+        instruction_lower = instruction.lower()
+        
+        if "in_review" in instruction_lower:
+            target_status = "in_review"
+        elif "done" in instruction_lower or "complete" in instruction_lower:
+            target_status = "done"
+        elif "in_progress" in instruction_lower or "progress" in instruction_lower:
+            target_status = "in_progress"
+        elif "todo" in instruction_lower:
+            target_status = "todo"
         else:
             return Action(name=RESPOND_ACTION_NAME, kwargs={
-                "content": "Ticket status updated to in_review."
+                "content": "Could not determine target status from instruction."
             })
+        
+        return Action(name="update_status", kwargs={
+            "ticket_id": ticket_id,
+            "new_status": target_status
+        })
 
     def _handle_priority_update(self, data: Dict[str, Any], instruction: str) -> Action:
-        if "tick_005" in instruction and "low" in instruction.lower():
-            return Action(name="update_priority", kwargs={
-                "ticket_id": "tick_005",
-                "priority": "low"
+        ticket_id = self._extract_ticket_id(instruction, data)
+        if not ticket_id:
+            return Action(name=RESPOND_ACTION_NAME, kwargs={
+                "content": "Could not identify which ticket to update."
             })
+        
+        instruction_lower = instruction.lower()
+        
+        if "high" in instruction_lower:
+            target_priority = "high"
+        elif "medium" in instruction_lower:
+            target_priority = "medium"
+        elif "low" in instruction_lower:
+            target_priority = "low"
         else:
             return Action(name=RESPOND_ACTION_NAME, kwargs={
-                "content": "Ticket assigned and priority updated to low."
+                "content": "Could not determine target priority from instruction."
             })
+        
+        return Action(name="update_priority", kwargs={
+            "ticket_id": ticket_id,
+            "priority": target_priority
+        })
 
     def _handle_comment_and_complete(self, data: Dict[str, Any], instruction: str, actions_executed: List[str]) -> Action:
+        ticket_id = self._extract_ticket_id(instruction, data)
+        if not ticket_id:
+            return Action(name=RESPOND_ACTION_NAME, kwargs={
+                "content": "Could not identify which ticket to comment on."
+            })
+        
         if "add_comment" not in actions_executed:
+            comment_match = re.search(r"'([^']+)'", instruction)
+            if comment_match:
+                comment_text = comment_match.group(1)
+            else:
+                comment_match = re.search(r'"([^"]+)"', instruction)
+                comment_text = comment_match.group(1) if comment_match else "Comment added"
+            
             return Action(name="add_comment", kwargs={
-                "ticket_id": "tick_003",
-                "comment": "Ready for testing"
+                "ticket_id": ticket_id,
+                "comment": comment_text
             })
         else:
             return Action(name="update_status", kwargs={
-                "ticket_id": "tick_003",
+                "ticket_id": ticket_id,
                 "new_status": "done"
             })
 
     def _handle_assignment_and_priority(self, data: Dict[str, Any], user_id: str, instruction: str, actions_executed: List[str]) -> Action:
+        ticket_id = self._extract_ticket_id(instruction, data)
+        if not ticket_id:
+            return Action(name=RESPOND_ACTION_NAME, kwargs={
+                "content": "Could not identify which ticket to assign."
+            })
+        
         if "assign_user" not in actions_executed:
             return Action(name="assign_user", kwargs={
-                "ticket_id": "tick_005",
+                "ticket_id": ticket_id,
                 "user_id": user_id
             })
         else:
+            instruction_lower = instruction.lower()
+            if "high" in instruction_lower:
+                target_priority = "high"
+            elif "medium" in instruction_lower:
+                target_priority = "medium"
+            elif "low" in instruction_lower:
+                target_priority = "low"
+            else:
+                target_priority = "medium"
+            
             return Action(name="update_priority", kwargs={
-                "ticket_id": "tick_005",
-                "priority": "low"
+                "ticket_id": ticket_id,
+                "priority": target_priority
             })
