@@ -21,7 +21,7 @@ def run(config: RunConfig) -> List[EnvRunResult]:
     assert config.env in ["retail", "airline", "pm"], "Only retail, airline, and pm envs are supported"
     assert config.model_provider in provider_list, "Invalid model provider"
     assert config.user_model_provider in provider_list, "Invalid user model provider"
-    assert config.agent_strategy in ["tool-calling", "act", "react", "few-shot"], "Invalid agent strategy"
+    assert config.agent_strategy in ["tool-calling", "act", "react", "few-shot", "rule-based"], "Invalid agent strategy"
     assert config.task_split in ["train", "test", "dev"], "Invalid task split"
     assert config.user_strategy in [item.value for item in UserStrategy], "Invalid user strategy"
 
@@ -171,6 +171,16 @@ def agent_factory(
             model=config.model,
             provider=config.model_provider,
             few_shot_displays=few_shot_displays,
+            temperature=config.temperature,
+        )
+    elif config.agent_strategy == "rule-based":
+        from tau_bench.agents.rule_based_agent import RuleBasedAgent
+        
+        return RuleBasedAgent(
+            tools_info=tools_info,
+            wiki=wiki,
+            model=config.model or "rule-based",
+            provider=config.model_provider or "baseline",
             temperature=config.temperature,
         )
     else:
