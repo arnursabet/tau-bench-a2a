@@ -103,4 +103,9 @@ def get_result(result_id: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    import os
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("AGENT_PORT", "8001"))
+    
+    print(f"Starting Mock White Agent on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)

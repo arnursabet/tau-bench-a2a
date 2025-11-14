@@ -254,4 +254,10 @@ def get_assessment_result(assessment_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("AGENT_PORT", "8000"))
+    
+    print(f"Starting Green Agent on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)
