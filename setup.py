@@ -18,5 +18,10 @@ setup(
         "termcolor>=2.4.0",
         "numpy>=1.26.4",
         "litellm>=1.41.0",
+        "earthshaker>=0.1.0",
+        "fastapi>=0.104.0",
+        "uvicorn>=0.24.0",
+        "httpx>=0.25.0",
+        "pydantic>=2.0.0",
     ],
 )

@@ -131,25 +131,28 @@ async def execute_task(request: Dict[str, Any]) -> dict:
         print(f"GREEN AGENT: Starting assessment {assessment_id}, task {task_id}")
         print(f"{'='*60}")
         
-        # Load environment
-        print("[GREEN AGENT]Preparing environment")
+        print("[GREEN AGENT] Preparing environment")
+        
+        task_idx = int(task_id) if str(task_id).isdigit() else 0
+        
         try:
             env = get_env(
                 env_name=DOMAIN,
                 user_strategy="human",  # for demo
                 user_model="dummy",  
                 task_split="test",
+                task_index=task_idx,
             )
             print(f"[GREEN AGENT] Loaded {len(env.tasks)} tasks")
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return {
                 "jsonrpc": "2.0",
                 "error": {"code": -32001, "message": f"Failed to load environment: {str(e)}"},
                 "id": request.get("id", "1"),
             }
         
-        # Get task from environment
-        task_idx = int(task_id) if str(task_id).isdigit() else 0
         if task_idx >= len(env.tasks):
             return {
                 "jsonrpc": "2.0",
@@ -225,6 +228,8 @@ async def execute_task(request: Dict[str, Any]) -> dict:
         return result
             
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {
             "jsonrpc": "2.0",
             "error": {"code": -1, "message": f"Internal error: {str(e)}"},
