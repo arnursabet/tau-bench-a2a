@@ -62,6 +62,12 @@ def fetch_agent_card() -> dict:
     card = get_agent_card()
     return card.model_dump()
 
+@app.get("/.well-known/agent-card.json")
+def well_known_agent_card() -> dict:
+    """A2A Standard Discovery Endpoint for AgentBeats."""
+    card = get_agent_card()
+    return card.model_dump()
+
 
 # ============================================================================
 # A2A Assessment Endpoints
