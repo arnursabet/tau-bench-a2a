@@ -1,4 +1,8 @@
-
+from service.green_agent.mock_white_agent_simulator import MockWhiteAgentSimulator
+from service.green_agent.white_agent_client import WhiteAgentEvaluator
+from service.green_agent.config import DOMAIN
+from tau_bench.envs import get_env
+import asyncio
 from fastapi import FastAPI, HTTPException
 from datetime import datetime
 import json
@@ -12,6 +16,7 @@ from service.green_agent.config import SERVICE_NAME, SERVICE_VERSION, DOMAIN, ME
 from service.green_agent.storage import storage
 
 app = FastAPI(title=SERVICE_NAME, version=SERVICE_VERSION)
+mock_simulator = MockWhiteAgentSimulator(success_rate=0.7)
 
 # Store registered white agents
 registered_agents: Dict[str, Dict] = {}
@@ -93,7 +98,7 @@ def reset_green_agent():
 
 
 @app.post("/a2a/execute_task")
-def execute_task(request: Dict[str, Any]) -> dict:
+async def execute_task(request: Dict[str, Any]) -> dict:
     """A2A: Execute a task on registered white agents.
     
     Receives task definition and orchestrates evaluation across white agents.
@@ -122,32 +127,107 @@ def execute_task(request: Dict[str, Any]) -> dict:
         
         # For demo: return a mock evaluation
         # In production: would call WhiteAgentClient to execute on white agent
-        evaluation = {
-            "task_id": task_id,
-            "reward": 0.5,  # Mock reward
-            "status": "completed",
-            "actions_match": True,
-            "outputs_match": False,
-            "violations": 0,
-            "expected_actions": ["list_tickets"],
-            "actual_actions": ["list_tickets"],
-            "note": "Demo mock evaluation - not yet calling white agent",
-        }
+        print(f"\n{'='*60}")
+        print(f"GREEN AGENT: Starting assessment {assessment_id}, task {task_id}")
+        print(f"{'='*60}")
         
-        return {
+        # Load environment
+        print("[GREEN AGENT]Preparing environment")
+        try:
+            env = get_env(
+                env_name=DOMAIN,
+                user_strategy="human",  # for demo
+                user_model="dummy",  
+                task_split="test",
+            )
+            print(f"[GREEN AGENT] Loaded {len(env.tasks)} tasks")
+        except Exception as e:
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32001, "message": f"Failed to load environment: {str(e)}"},
+                "id": request.get("id", "1"),
+            }
+        
+        # Get task from environment
+        task_idx = int(task_id) if str(task_id).isdigit() else 0
+        if task_idx >= len(env.tasks):
+            return {
+                "jsonrpc": "2.0",
+                "error": {"code": -32602, "message": f"Task {task_id} not found"},
+                "id": request.get("id", "1"),
+            }
+        
+        task = env.tasks[task_idx]
+        task_tools = tools if tools else env.tools_info
+        task_instruction = instruction if instruction else getattr(task, 'instruction', 'Complete task')
+        
+        print(f"[GREEN AGENT] Task instruction: {task_instruction[:100]}...")
+        print(f"[GREEN AGENT] Available tools: {len(task_tools)}")
+        
+        # Reset white agent before task
+        print("[GREEN AGENT] Resetting white agent")
+        reset_success = await mock_simulator.reset()
+        if not reset_success:
+            print("[GREEN AGENT] Reset failed")
+        else:
+            print("[GREEN AGENT] Reset sucessful")
+        
+        # Distribute task to white agent
+        print("[GREEN AGENT] Distributing task to white agent")
+        agent_response = await mock_simulator.execute_task(
+            task_id=str(task_id),
+            instruction=task_instruction,
+            tools=task_tools
+        )
+        print("[GREEN AGENT] Received response from white agent")
+        
+        # Verify environment / Evaluate response
+        print("[GREEN AGENT] Evaluating white agent response")
+        evaluator = WhiteAgentEvaluator(env)
+        
+        from service.green_agent.a2a_schemas import TaskInput
+        task_input = TaskInput(
+            task_id=str(task_id),
+            instruction=task_instruction,
+            tools=task_tools,
+            environment_state=None,
+        )
+        
+        ground_truth_actions = getattr(task, 'expected_actions', [])
+        ground_truth_outputs = getattr(task, 'expected_outputs', [])
+        
+        evaluation = await evaluator.evaluate_response(
+            task_input=task_input,
+            agent_response=agent_response,
+            ground_truth_actions=ground_truth_actions,
+            ground_truth_outputs=ground_truth_outputs,
+        )
+        
+        print(f"[GREEN AGENT] Evaluation complete:")
+        print(f"[GREEN AGENT] Reward: {evaluation.get('reward', 0.0)}")
+        print(f"[GREEN AGENT] Status: {evaluation.get('status', 'unknown')}")
+        print(f"[GREEN AGENT] Violations: {evaluation.get('violations', 0)}")
+        
+        # Report metrics
+        print("[GREEN AGENT] Reporting results")
+        result = {
             "jsonrpc": "2.0",
             "result": {
-                "task_id": task_id,
+                "task_id": str(task_id),
                 "assessment_id": assessment_id,
                 "evaluation": evaluation,
+                "timestamp": datetime.now().isoformat(),
+                "mode": "mock_simulator", 
             },
             "id": request.get("id", "1"),
         }
+        
+        return result
             
     except Exception as e:
         return {
             "jsonrpc": "2.0",
-            "error": {"code": -1, "message": str(e)},
+            "error": {"code": -1, "message": f"Internal error: {str(e)}"},
             "id": request.get("id", "1"),
         }
 
