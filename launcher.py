@@ -1,5 +1,5 @@
 """
-Assessment Launcher starts both green and mock white agents, runs assessment, and displays results
+Assessment Launcher starts both green and LLM white agents, runs assessment, and displays results
 """
 
 import subprocess
@@ -8,6 +8,7 @@ import httpx
 import asyncio
 import json
 import sys
+import os
 from pathlib import Path
 
 class AssessmentLauncher:
@@ -16,7 +17,8 @@ class AssessmentLauncher:
         self.green_agent_process = None
         self.white_agent_process = None
         self.green_agent_url = "http://localhost:8000"
-        self.white_agent_url = "http://localhost:8001"
+        #self.white_agent_url = "http://localhost:8001" #mock white agent
+        self.white_agent_url = "http://localhost:8002"  # LLM white agent
     
     def start_agents(self):
         print("="*70)
@@ -50,18 +52,16 @@ class AssessmentLauncher:
             print(f"[Launcher] Failed to start green agent: {e}")
             raise
         
-        print("[Launcher] Starting mock white agent")
+        print("[Launcher] Starting LLM white agent")
         try:
             self.white_agent_process = subprocess.Popen(
                 [
-                    sys.executable, "-m", "uvicorn",
-                    "service.mock_white_agent:app",
-                    "--host", "127.0.0.1",
-                    "--port", "8001"
+                    sys.executable, "-m", "service.white_agent.main"
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                cwd=Path(__file__).parent
+                cwd=Path(__file__).parent,
+                env={**dict(os.environ), "AGENT_PORT": "8002"}
             )
             time.sleep(0.5)
             if self.white_agent_process.poll() is not None:
@@ -94,10 +94,11 @@ class AssessmentLauncher:
                 if response.status_code == 200:
                     print(f"[Launcher] Agents ready after {i+1} seconds")
                     break
-            except:
+            except Exception as e:
                 if i < max_retries - 1:
                     continue
                 else:
+                    print(f"[Launcher] Failed to connect after {max_retries} attempts: {e}")
                     raise
         
         self._check_agent_health()
@@ -141,7 +142,7 @@ class AssessmentLauncher:
             try:
                 response = httpx.get(f"{self.white_agent_url}/a2a/agent-card", timeout=3)
                 if response.status_code == 200:
-                    print("[Launcher] Mock white agent is healthy")
+                    print("[Launcher] LLM white agent is healthy")
                     break
                 else:
                     raise Exception(f"White agent unhealthy: {response.status_code}")
@@ -264,7 +265,7 @@ class AssessmentLauncher:
             try:
                 self.white_agent_process.terminate()
                 self.white_agent_process.wait(timeout=5)
-                print("[Launcher] Mock white agent terminated")
+                print("[Launcher] LLM white agent terminated")
             except Exception as e:
                 print(f"[Launcher] Error terminating white agent: {e}")
                 try:

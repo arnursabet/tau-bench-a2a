@@ -1,12 +1,17 @@
+from dotenv import load_dotenv
 from service.green_agent.mock_white_agent_simulator import MockWhiteAgentSimulator
-from service.green_agent.white_agent_client import WhiteAgentEvaluator
+from service.green_agent.white_agent_client import WhiteAgentClient, WhiteAgentEvaluator
 from service.green_agent.config import DOMAIN
 from tau_bench.envs import get_env
 import asyncio
+import os
 from fastapi import FastAPI, HTTPException
 from datetime import datetime
 import json
 from typing import Dict, Any
+
+# Load environment variables from .env file
+load_dotenv()
 from service.green_agent.a2a_schemas import (
     AgentCard, AgentCapabilities, AgentEndpoints,
     AssessmentRequest, AssessmentResult, TaskMetrics,
@@ -16,7 +21,15 @@ from service.green_agent.config import SERVICE_NAME, SERVICE_VERSION, DOMAIN, ME
 from service.green_agent.storage import storage
 
 app = FastAPI(title=SERVICE_NAME, version=SERVICE_VERSION)
-mock_simulator = MockWhiteAgentSimulator(success_rate=0.7)
+
+# Choose execution mode: mock or real
+USE_MOCK = os.getenv("USE_MOCK_WHITE_AGENT", "false").lower() == "true"
+mock_simulator = MockWhiteAgentSimulator(success_rate=0.7) if USE_MOCK else None
+
+if USE_MOCK:
+    print("[GREEN AGENT] using MockWhiteAgentSimulator")
+else:
+    print("[GREEN AGENT] using actual white agents")
 
 # Store registered white agents
 registered_agents: Dict[str, Dict] = {}
@@ -173,28 +186,73 @@ async def execute_task(request: Dict[str, Any]) -> dict:
         print(f"[GREEN AGENT] Task instruction: {task_instruction[:100]}...")
         print(f"[GREEN AGENT] Available tools: {len(task_tools)}")
         
-        # Reset white agent before task
-        print("[GREEN AGENT] Resetting white agent")
-        reset_success = await mock_simulator.reset()
-        if not reset_success:
-            print("[GREEN AGENT] Reset failed")
+        # Choose execution mode
+        if USE_MOCK:
+            print("[GREEN AGENT] Using mock simulator")
+            # Reset white agent before task
+            print("[GREEN AGENT] Resetting white agent")
+            reset_success = await mock_simulator.reset()
+            if not reset_success:
+                print("[GREEN AGENT] Reset failed")
+            else:
+                print("[GREEN AGENT] Reset successful")
+            
+            # Distribute task to white agent
+            print("[GREEN AGENT] Distributing task to white agent")
+            agent_response = await mock_simulator.execute_task(
+                task_id=str(task_id),
+                instruction=task_instruction,
+                tools=task_tools
+            )
+            print("[GREEN AGENT] Received response from white agent")
         else:
-            print("[GREEN AGENT] Reset sucessful")
-        
-        # Distribute task to white agent
-        print("[GREEN AGENT] Distributing task to white agent")
-        agent_response = await mock_simulator.execute_task(
-            task_id=str(task_id),
-            instruction=task_instruction,
-            tools=task_tools
-        )
-        print("[GREEN AGENT] Received response from white agent")
+            print("[GREEN AGENT] Using real white agent client")
+            agent_info = registered_agents[assessment_id]
+            agent_url = agent_info["agent_url"]
+            
+            # Initialize white agent client
+            client = WhiteAgentClient(agent_url, timeout=60.0)
+            
+            try:
+                # Reset white agent before task
+                print(f"[GREEN AGENT] Resetting white agent at {agent_url}")
+                reset_success = await client.reset_agent()
+                if not reset_success:
+                    print("[GREEN AGENT] Reset failed")
+                else:
+                    print("[GREEN AGENT] Reset successful")
+                
+                # Prepare task input
+                task_input = TaskInput(
+                    task_id=str(task_id),
+                    instruction=task_instruction,
+                    tools=task_tools,
+                    environment_state=None,
+                )
+                
+                # Distribute task to white agent
+                print("[GREEN AGENT] Distributing task to white agent")
+                agent_response = await client.execute_task(task_input)
+                print("[GREEN AGENT] Received response from white agent")
+                
+                await client.close()
+                
+            except Exception as e:
+                print(f"[GREEN AGENT] Error communicating with white agent: {e}")
+                await client.close()
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32000,
+                        "message": f"Failed to communicate with white agent: {str(e)}"
+                    },
+                    "id": request.get("id", "1"),
+                }
         
         # Verify environment / Evaluate response
         print("[GREEN AGENT] Evaluating white agent response")
         evaluator = WhiteAgentEvaluator(env)
         
-        from service.green_agent.a2a_schemas import TaskInput
         task_input = TaskInput(
             task_id=str(task_id),
             instruction=task_instruction,
@@ -226,7 +284,7 @@ async def execute_task(request: Dict[str, Any]) -> dict:
                 "assessment_id": assessment_id,
                 "evaluation": evaluation,
                 "timestamp": datetime.now().isoformat(),
-                "mode": "mock_simulator", 
+                "mode": "mock_simulator" if USE_MOCK else "real_white_agent",
             },
             "id": request.get("id", "1"),
         }
