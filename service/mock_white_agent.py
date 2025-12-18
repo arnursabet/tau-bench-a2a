@@ -23,7 +23,7 @@ class AgentCard(BaseModel):
 
 
 def get_mock_agent_card() -> dict:
-    """Return a minimal A2A-compliant agent card."""
+    """Return a complete A2A-compliant agent card."""
     return {
         "name": "Mock White Agent",
         "description": "A simple mock agent for testing A2A protocol",
@@ -32,7 +32,18 @@ def get_mock_agent_card() -> dict:
         "capabilities": {
             "domains": ["project-management"],
             "metrics": ["pass_1", "pass_k"],
+            "max_agents": None,
+            "max_trials": None,
+            "max_concurrent_tasks": 1,
         },
+        "endpoints": {
+            "agent_card": "GET /a2a/agent-card",
+            "reset": "POST /a2a/reset",
+            "execute_task": "POST /a2a/execute_task",
+            "get_result": "GET /a2a/result/{result_id}",
+            "register_agent": None,
+        },
+        "authentication": None,
     }
 
 
@@ -103,4 +114,9 @@ def get_result(result_id: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    import os
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("AGENT_PORT", "8001"))
+    
+    print(f"Starting Mock White Agent on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)
