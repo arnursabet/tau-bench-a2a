@@ -5,6 +5,11 @@ ENV/
 .venv/
 .env/
 
+
+# claude 
+CLAUDE.md
+GREEN_AGENT_OVERVIEW.md
+
 # Python
 __pycache__/
 *.py[cod]
