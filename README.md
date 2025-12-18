@@ -1,260 +1,280 @@
-# τ-Bench Project Management (PM) Domain
+# LLM-Based White Agent for tau-Bench PM Domain
 
-This extension adds a **project management domain** to τ-Bench, enabling evaluation of agents on realistic ticket-management tasks.
+This repository contains an LLM-based white agent evaluated on the tau-Bench Project Management domain, implementing the A2A (Agent-to-Agent) protocol for tool-use evaluation.
 
-## Overview
+## Architecture
 
-The PM domain evaluates agents on their ability to:
-- Authenticate users and operate within project scope
-- Create, update, and manage tickets (tasks)
-- Assign tickets to team members
-- Enforce policy constraints (status transitions, membership checks, confirmation rules)
-- Handle multi-step workflows consistently
+```mermaid
+flowchart TB
+    subgraph "Green Agent (Evaluator)"
+        GA[FastAPI Service]
+        EVAL[WhiteAgentEvaluator]
+        ENV[PM Environment]
+        TASKS[(Tasks)]
+    end
 
-## Domain Components
+    subgraph "White Agent (LLM)"
+        WA[FastAPI Service]
+        LLM[GPT-4o-mini]
+        PROMPT[Prompt Builder]
+        PARSER[JSON Parser]
+        FALLBACK[Fallback Generator]
+    end
+
+    GA <-->|A2A Protocol| WA
+    GA --> EVAL
+    EVAL --> ENV
+    ENV --> TASKS
+
+    WA --> PROMPT
+    PROMPT --> LLM
+    LLM --> PARSER
+    PARSER -.->|on failure| FALLBACK
+```
+
+## Decision Pipeline
+
+```mermaid
+sequenceDiagram
+    participant G as Green Agent
+    participant W as White Agent
+    participant L as LLM (GPT-4o-mini)
+
+    G->>W: Task instruction + Tool schemas
+    W->>W: Build system prompt with PM context
+    W->>L: Send prompt (temp=0.7, max_tokens=1000)
+    L->>W: JSON response with tool calls
+    W->>W: Parse JSON via regex
+    alt Parsing succeeds
+        W->>G: A2A response with actions
+    else Parsing fails
+        W->>W: Keyword-based fallback
+        W->>G: A2A response with fallback actions
+    end
+    G->>G: Evaluate against ground truth
+    G->>G: Compute reward (1.0 or 0.0)
+```
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.12+
+- OpenAI API key
+
+### Setup
+
+```bash
+# Clone and install
+git clone <repo-url> && cd tau-bench
+pip install -e .
+
+# Configure API key
+cp env.example .env
+# Edit .env: OPENAI_API_KEY=your-key
+```
+
+### Run Assessment
+
+```bash
+# Option 1: Use launcher (recommended)
+python launcher.py
+
+# Option 2: Manual start
+# Terminal 1: Green agent
+python -m uvicorn service.green_agent.main:app --port 8000
+
+# Terminal 2: White agent
+python -m service.white_agent.main
+
+# Terminal 3: Run tests
+python test_integration.py
+```
+
+## PM Domain
 
 ### Data Model
 
-**Users** (`data/users.json`):
-- 5 sample users with IDs, names, and emails
-- Used for authentication and project membership
+| Entity | Count | Description |
+|--------|-------|-------------|
+| Users | 5 | Alice, Bob, Carol, David, Emma |
+| Projects | 3 | Web App Redesign, Mobile Companion, Backend API |
+| Tickets | 5 | Tasks with status, priority, assignee |
 
-**Projects** (`data/projects.json`):
-- 3 projects: Web App, Mobile, Backend
-- Each project has a defined member list
+### Tools (9 total)
 
-**Tickets** (`data/tickets.json`):
-- Initial set of 5 tickets across projects
-- Fields: id, project_id, title, description, status, priority, assignee, comments, history
-
-### Tools (APIs)
-
-Located in `tau_bench/envs/pm/tools/`:
-
-| Tool | Purpose |
-|------|---------|
-| `list_tickets` | Query tickets in a project with optional status filter |
-| `create_ticket` | Create a new ticket with title, description, priority |
-| `update_status` | Change ticket status following allowed transitions |
-| `assign_user` | Assign ticket to a project member |
-| `update_priority` | Change ticket priority (low/medium/high) |
-| `add_comment` | Add a comment to a ticket |
+| Tool | Description |
+|------|-------------|
+| `list_tickets` | Query tickets with optional filters |
+| `create_ticket` | Create new ticket with title, priority |
+| `update_status` | Change ticket status |
+| `assign_user` | Assign ticket to project member |
+| `update_priority` | Change ticket priority |
+| `add_comment` | Add comment to ticket |
 | `get_user_details` | Retrieve user information |
-| `transfer_to_human_agents` | Terminate conversation (for out-of-scope requests) |
-| `think` | Internal reasoning (non-state-changing) |
+| `transfer_to_human_agents` | Escalate to human |
+| `think` | Internal reasoning step |
 
-### Policy
+### Status Workflow
 
-Defined in `tau_bench/envs/pm/wiki.md` and `tau_bench/envs/pm/rules.py`:
+```mermaid
+stateDiagram-v2
+    [*] --> todo
+    todo --> in_progress
+    in_progress --> in_review
+    in_review --> done
+    done --> [*]
 
-- **Authentication**: User must be identified at the beginning
-- **Single Project Scope**: Agent works on one project per conversation
-- **Status Transitions**: `todo → in_progress → in_review → done` (with backtracking allowed)
-- **Membership Constraint**: Only project members can be assigned tickets
-- **Confirmation**: Agent must ask for explicit confirmation before state-changing operations
-- **One Call per Turn**: Either a tool call OR user response, never both
+    in_progress --> todo: backtrack
+    in_review --> in_progress: backtrack
+```
+
+### Policy Rules
+
+1. **Authentication**: Identify user at conversation start
+2. **Single Project**: Work within one project per conversation
+3. **Membership**: Only assign tickets to project members
+4. **Confirmation**: Request confirmation before state changes
+5. **One Action per Turn**: Either tool call or response, not both
+
+## Evaluation
 
 ### Tasks
 
-5 test tasks in `tau_bench/envs/pm/tasks_test.py` covering:
-1. Assigning high-priority tickets and moving to in_progress
-2. Creating multiple new tickets with different priorities
-3. Moving a ticket through status workflow
-4. Assigning and changing priority
-5. Adding comments and completing a ticket
+| Task | Actions | Description |
+|------|---------|-------------|
+| 0 | 4 | Assign high-priority tickets + update status |
+| 1 | 2 | Create two tickets with different priorities |
+| 2 | 1 | Update ticket status to in_review |
+| 3 | 2 | Assign ticket + change priority |
+| 4 | 2 | Add comment + mark done |
 
-## Integration with τ-Bench
+### Metrics
 
-### Using the CLI
+```mermaid
+flowchart LR
+    A[White Agent Output] --> B{Actions Match?}
+    B -->|Yes| C{Outputs Match?}
+    B -->|No| F[Reward = 0.0]
+    C -->|Yes| E[Reward = 1.0]
+    C -->|No| F
 
-```bash
-# Load the PM domain
-python run.py \
-  --agent-strategy tool-calling \
-  --env pm \
-  --model gpt-4-mini \
-  --model-provider openai \
-  --num-trials 3 \
-  --user-model gpt-4-mini \
-  --user-model-provider openai
+    subgraph "Actions Match"
+        B1[set expected_names]
+        B2[set actual_names]
+        B1 -.->|==| B2
+    end
+
+    subgraph "Outputs Match"
+        C1[expected strings]
+        C2[response text]
+        C1 -.->|in| C2
+    end
 ```
 
-### Programmatic Usage
+- **pass^1**: Fraction of tasks with reward=1.0 on single trial
+- **actions_match**: `set(expected_action_names) == set(actual_action_names)`
+- **outputs_match**: Expected strings appear in response text
 
-```python
-from tau_bench.envs import get_env
+### Results
 
-env = get_env(
-    env_name="pm",
-    user_strategy="llm",  # or "human" for interactive testing
-    user_model="gpt-4o",
-    task_split="test",
-)
+| Agent | pass^1 | Tasks Passed |
+|-------|--------|--------------|
+| Keyword baseline | 20% | 1/5 (Task 2) |
+| GPT-4o-mini | 40% | 2/5 (Tasks 1, 2) |
 
-# Access domain components
-print(f"Tasks: {len(env.tasks)}")
-print(f"Tools: {len(env.tools_info)}")
-print(f"Wiki: {len(env.wiki)}")
+## White Agent Implementation
+
+### System Prompt Structure
+
+```
+Domain Context
+├── PM system description (users, projects, tickets)
+├── Workflow rules (status transitions)
+└── 5 policy constraints
+
+Tool Catalog
+├── Tool name and description
+└── Parameters with types and requirements
+
+Few-shot Examples
+├── Example 1: List tickets
+├── Example 2: Create and assign
+└── Example 3: Update status
+
+Response Format
+└── JSON array of tool calls
 ```
 
-## FastAPI Green Agent Service
+### Modules
 
-A FastAPI service exposes the PM domain for evaluation:
+| Module | Function | Location |
+|--------|----------|----------|
+| Prompt Builder | Constructs system prompt | `_build_system_prompt()` |
+| Tool Formatter | Converts JSON schemas to text | `_format_tools()` |
+| LLM Caller | Async LiteLLM wrapper | `execute_task()` |
+| JSON Parser | Regex extraction from output | `_parse_tool_calls()` |
+| Fallback Generator | Keyword-based action mapping | `_generate_fallback_actions()` |
 
-### Installation
-
-```bash
-pip install fastapi uvicorn
-```
-
-### Running the Service
-
-```bash
-make run
-# or
-uvicorn service.green_agent.main:app --reload
-```
+## A2A Protocol
 
 ### Endpoints
 
+**Green Agent (port 8000)**
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/health` | GET | Health check |
-| `/agent-card` | GET | Agent capabilities descriptor |
-| `/reset` | POST | Reset domain state |
-| `/assess` | POST | Run assessment on tasks |
-| `/logs/{run_id}` | GET | Fetch run logs and episodes |
+| `/.well-known/agent-card.json` | GET | Agent discovery |
+| `/a2a/register_agent` | POST | Register white agent |
+| `/a2a/execute_task` | POST | Execute task |
+| `/a2a/result/{id}` | GET | Get assessment result |
 
-### Example: Running an Assessment
-
-```bash
-curl -X POST http://localhost:8000/assess \
-  -H "Content-Type: application/json" \
-  -d '{
-    "trials": 3,
-    "agent_strategy": "tool-calling",
-    "task_ids": [0, 1, 2]
-  }'
-```
-
-Response:
-```json
-{
-  "run_id": "762ecd18-b2b6-497f-9129-3e4ff8b71aed",
-  "pass_1": 0.4,
-  "pass_k": {"1": 0.4, "2": 0.2, "3": 0.0},
-  "per_task": [
-    {
-      "task_id": 0,
-      "pass_1": 0.333,
-      "pass_k": {"1": 0.333, "2": 0.0, "3": 0.0},
-      "num_trials": 3
-    },
-    ...
-  ]
-}
-```
-
-## Metrics
-
-The evaluation framework tracks:
-
-- **pass^1**: Fraction of tasks completed successfully in one trial
-- **pass^k**: Probability of completing all k trials successfully (measures consistency/reliability)
-- **Per-task metrics**: Task-level pass rates and pass^k breakdown
-- **Episode logs**: Action sequences, errors, and policy violations
-
-## Demo & Testing
-
-### Run Demo
-
-```bash
-make demo
-# or
-python3 scripts/demo.py
-```
-
-Generates `demo_results.json` with sample assessment results.
-
-### Expected Output
-
-```
-============================================================
-τ-Bench PM Domain Demo
-============================================================
-
-Running Assessment 1: Basic eval (1 trial)
-------------------------------------------------------------
-Run ID: ...
-Pass^1: 40.00%
-Pass^k: {1: 0.4}
-
-Running Assessment 2: Multi-trial eval (3 trials)
-------------------------------------------------------------
-...
-```
-
-## Design Rationale
-
-### Simplicity & DRY
-
-- Reuses τ-Bench's core evaluation harness (environment, agent framework, metrics)
-- Tools follow τ-Bench patterns (Tool base class, get_info descriptors, invoke methods)
-- No SQL; state is pure JSON for tractability
-
-### Policy Enforcement
-
-- Status transitions hard-coded in `UpdateStatus` tool
-- Membership checks in `AssignUser` tool
-- Policy text echoed in system prompt for LLM agents
-
-### Ground Truth Validation
-
-- Tasks include deterministic action sequences
-- Final state compared via JSON hash (like retail/airline domains)
-- Output verification for user-facing information (comments, confirmations)
-
-## Future Improvements
-
-1. **Real Agent Integration**: Replace mock rewards with actual agent/LLM invocation
-2. **More Tasks**: Expand test/dev/train splits with complex scenarios
-3. **Advanced Policies**: Dynamic rules, multi-project workflows, role-based access
-4. **Metrics Extensions**: Cost tracking, latency, error categories
-5. **Baseline Agents**: Implement rule-based and few-shot baselines
+**White Agent (port 8002)**
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Health check |
+| `/a2a/agent-card` | GET | Agent capabilities |
+| `/a2a/reset` | POST | Reset agent state |
+| `/a2a/execute_task` | POST | Execute task |
 
 ## File Structure
 
 ```
-tau_bench/
-├── envs/
-│   ├── pm/
-│   │   ├── __init__.py
-│   │   ├── env.py           # MockPMDomainEnv
-│   │   ├── data/
-│   │   │   ├── __init__.py
-│   │   │   ├── users.json
-│   │   │   ├── projects.json
-│   │   │   └── tickets.json
-│   │   ├── tools/           # Tool implementations
-│   │   ├── wiki.md          # Policy documentation
-│   │   ├── wiki.py          # Wiki loader
-│   │   ├── rules.py         # Rule list
-│   │   └── tasks_test.py    # Test tasks
-│
-service/
-├── green_agent/
-│   ├── main.py              # FastAPI app
-│   ├── schemas.py           # Pydantic models
-│   ├── runner.py            # Assessment runner
-│   ├── storage.py           # SQLite storage
-│   └── config.py            # Configuration
-│
-scripts/
-├── demo.py                  # Demo assessment script
-└── Makefile                 # Build/run targets
+tau-bench/
+├── service/
+│   ├── green_agent/
+│   │   ├── main.py                 # FastAPI evaluator service
+│   │   ├── white_agent_client.py   # A2A client + evaluator
+│   │   ├── a2a_schemas.py          # Protocol schemas
+│   │   └── config.py               # Configuration
+│   └── white_agent/
+│       ├── main.py                 # FastAPI LLM service
+│       └── llm_agent.py            # LLMWhiteAgent class
+├── tau_bench/
+│   └── envs/
+│       └── pm/
+│           ├── data/               # JSON fixtures
+│           ├── tools/              # Tool implementations
+│           ├── tasks_test.py       # Test tasks
+│           ├── wiki.md             # Policy documentation
+│           └── rules.py            # Rule definitions
+├── launcher.py                     # End-to-end assessment runner
+├── env.example                     # Environment template
+└── README.md                       # This file
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+OPENAI_API_KEY=your-api-key        # Required
+LLM_MODEL=gpt-4o-mini              # Optional (default: gpt-4o-mini)
+USE_MOCK_WHITE_AGENT=false         # Optional (default: false)
 ```
 
 ## References
 
-- τ-Bench paper: https://arxiv.org/abs/2406.12045
-- τ-Bench repo: https://github.com/sierra-research/tau-bench
+- [tau-Bench Paper](https://arxiv.org/abs/2406.12045) - Yao et al., 2024
+- [tau-Bench Repository](https://github.com/sierra-research/tau-bench)
+- [AgentBeats Platform](https://v2.agentbeats.org)

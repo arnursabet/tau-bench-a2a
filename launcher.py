@@ -10,6 +10,7 @@ import json
 import sys
 import os
 from pathlib import Path
+from tau_bench.envs.pm.tasks_test import TASKS_TEST
 
 class AssessmentLauncher:
     
@@ -174,7 +175,7 @@ class AssessmentLauncher:
         print("\n" + "="*70)
         print("Starting Assessment")
         print("="*70)
-        
+
         async with httpx.AsyncClient(timeout=60.0) as client:
             print("\n[Launcher] Registering white agent")
             register_response = await client.post(
@@ -184,66 +185,83 @@ class AssessmentLauncher:
                     "agent_card": None,
                 }
             )
-            
+
             if register_response.status_code != 200:
                 print(f"[Launcher] Registration failed: {register_response.text}")
                 return None
-            
+
             assessment_id = register_response.json()["assessment_id"]
             print(f"[Launcher] White agent registered with ID: {assessment_id}")
-            
-            print("\n[Launcher] Executing assessment task")
-            task_response = await client.post(
-                f"{self.green_agent_url}/a2a/execute_task",
-                json={
-                    "jsonrpc": "2.0",
-                    "method": "tasks/execute",
-                    "params": {
-                        "assessment_id": assessment_id,
-                        "task_id": "0",
-                        "instruction": "List all tickets in the project management system",
-                        "tools": [],
-                    },
-                    "id": "launcher_task_1"
-                }
-            )
-            
-            if task_response.status_code != 200:
-                print(f"[Launcher] Task execution failed: {task_response.text}")
-                return None
-            
-            result = task_response.json()
-            print("[Launcher] Task execution completed")
-            
-            return result
+
+            results = []
+            for task_idx, task in enumerate(TASKS_TEST):
+                print(f"\n[Launcher] Executing task {task_idx + 1}/{len(TASKS_TEST)}")
+                print(f"[Launcher] Instruction: {task.instruction[:80]}...")
+
+                task_response = await client.post(
+                    f"{self.green_agent_url}/a2a/execute_task",
+                    json={
+                        "jsonrpc": "2.0",
+                        "method": "tasks/execute",
+                        "params": {
+                            "assessment_id": assessment_id,
+                            "task_id": str(task_idx),
+                            "instruction": task.instruction,
+                            "tools": [],
+                        },
+                        "id": f"launcher_task_{task_idx}"
+                    }
+                )
+
+                if task_response.status_code != 200:
+                    print(f"[Launcher] Task {task_idx} failed: {task_response.text}")
+                    results.append({"task_id": task_idx, "reward": 0.0, "error": True})
+                else:
+                    result = task_response.json()
+                    evaluation = result.get("result", {}).get("evaluation", {})
+                    reward = evaluation.get("reward", 0.0)
+                    results.append({
+                        "task_id": task_idx,
+                        "reward": reward,
+                        "actions_match": evaluation.get("actions_match", False),
+                        "outputs_match": evaluation.get("outputs_match", False),
+                    })
+                    print(f"[Launcher] Task {task_idx} reward: {reward}")
+
+            return {"assessment_id": assessment_id, "results": results}
     
     def display_results(self, result):
         print("\n" + "="*70)
         print("Assessment Results")
         print("="*70)
-        
-        if result and "result" in result:
-            evaluation = result["result"].get("evaluation", {})
-            
-            print(f"\n Evaluation Metrics:")
-            print(f"   Reward: {evaluation.get('reward', 0.0)}")
-            print(f"   Status: {evaluation.get('status', 'unknown')}")
-            print(f"   Actions Match: {evaluation.get('actions_match', False)}")
-            print(f"   Outputs Match: {evaluation.get('outputs_match', False)}")
-            print(f"   Violations: {evaluation.get('violations', 0)}")
-            
-            print(f"\n Task Details:")
-            print(f"   Task ID: {result['result'].get('task_id')}")
-            print(f"   Assessment ID: {result['result'].get('assessment_id')}")
-            print(f"   Timestamp: {result['result'].get('timestamp')}")
-            print(f"   Mode: {result['result'].get('mode', 'unknown')}")
-            
-            print(f"\n Assessment completed successfully!")
+
+        if result and "results" in result:
+            task_results = result["results"]
+            total_tasks = len(task_results)
+            total_reward = sum(r.get("reward", 0.0) for r in task_results)
+            pass_1 = total_reward / total_tasks if total_tasks > 0 else 0.0
+            successes = sum(1 for r in task_results if r.get("reward", 0.0) == 1.0)
+
+            print(f"\n Overall Metrics:")
+            print(f"   pass^1: {pass_1:.1%} ({successes}/{total_tasks} tasks)")
+            print(f"   Total Reward: {total_reward:.1f}/{total_tasks}")
+
+            print(f"\n Per-Task Results:")
+            for r in task_results:
+                task_id = r.get("task_id", "?")
+                reward = r.get("reward", 0.0)
+                status = "PASS" if reward == 1.0 else "FAIL"
+                actions_match = r.get("actions_match", False)
+                outputs_match = r.get("outputs_match", False)
+                print(f"   Task {task_id}: {status} (reward={reward:.1f}, actions={actions_match}, outputs={outputs_match})")
+
+            print(f"\n Assessment ID: {result.get('assessment_id')}")
+            print(f"\n Assessment completed!")
         else:
             print("\n  No results available")
             if result:
                 print(f"Error: {result.get('error', {}).get('message', 'Unknown error')}")
-        
+
         print("="*70)
     
     def cleanup(self):

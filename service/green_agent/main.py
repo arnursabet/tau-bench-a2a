@@ -260,8 +260,9 @@ async def execute_task(request: Dict[str, Any]) -> dict:
             environment_state=None,
         )
         
-        ground_truth_actions = getattr(task, 'expected_actions', [])
-        ground_truth_outputs = getattr(task, 'expected_outputs', [])
+        raw_actions = getattr(task, 'actions', [])
+        ground_truth_actions = [{"name": a.name, "kwargs": a.kwargs} for a in raw_actions]
+        ground_truth_outputs = getattr(task, 'outputs', [])
         
         evaluation = await evaluator.evaluate_response(
             task_input=task_input,
